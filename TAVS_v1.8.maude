@@ -1,0 +1,145 @@
+ --- v1.8 7 de abril de 2022
+ 
+fmod PROTOCOL-EXAMPLE-SYMBOLS is
+  --- Importing sorts Msg, Fresh, Public, and GhostData
+  protecting DEFINITION-PROTOCOL-RULES .
+  
+  ----------------------------------------------------------
+  --- Overwrite this module with the syntax of your protocol
+  --- Notes:
+  --- * Sort Msg and Fresh are special and imported
+  --- * Every sort must be a subsort of Msg
+  --- * No sort can be a supersort of Msg
+  ----------------------------------------------------------
+
+  --- Información Sort 
+  sorts Name Key .
+  --- He quitado : Nonce NeNonceSet Mask Choice (no se usaban después, venían de reusar el código de ejemplo...)
+  subsort Name Key < Msg .
+  --- He quitado el Fresh
+  subsort Name < Public .
+  subsort Name < Key .
+
+  
+  --- Roles
+  op elector : -> Name .
+  op identification-authority : -> Name .
+  op remote-polling-station : -> Name .
+  op intruder : -> Name .
+
+  --- Operadores
+  op choice : Name Fresh -> Msg .
+  op hash : Msg -> Msg .
+  op mask : Name Fresh -> Msg .
+  
+  --- Operadores de cifrado público y privado
+  op pk : Key Msg -> Msg [frozen] .
+  op sk : Key Msg -> Msg [frozen] .
+    
+  --- Operador concatenación
+  op _;_ : Msg Msg -> Msg [gather (e E) frozen] .
+  
+  --- Operador multiplicación exponencial 
+  op _*_ : Msg Msg -> Msg [assoc comm frozen] .
+  op null : -> Msg .
+  
+endfm
+
+fmod PROTOCOL-EXAMPLE-ALGEBRAIC is
+  protecting PROTOCOL-EXAMPLE-SYMBOLS .
+  
+  ----------------------------------------------------------
+  --- Overwrite this module with the algebraic properties 
+  --- of your protocol
+  ----------------------------------------------------------
+var Z : Msg .
+var Ke : Key .
+
+--- Cancelación de la cifra publica-privada.
+eq pk(Ke,sk(Ke,Z)) = Z [variant] .
+eq sk(Ke,pk(Ke,Z)) = Z [variant] .
+
+endfm
+
+fmod PROTOCOL-SPECIFICATION is
+  protecting PROTOCOL-EXAMPLE-SYMBOLS .
+  protecting DEFINITION-PROTOCOL-RULES .
+  protecting DEFINITION-CONSTRAINTS-INPUT .
+
+  ----------------------------------------------------------
+  --- Overwrite this module with the strands 
+  --- of your protocol
+  ----------------------------------------------------------
+  
+  --- Clave genérica
+  var K : Key .
+  
+  --- Mensajes genéricos
+  vars M M1 M2 : Msg .
+  
+  --- Valor Máscara genérica
+  vars Msk : Msg .
+  vars Choice Mask : Fresh .
+  
+  --- Roles genéricos para los STRANDS-PROTOCOL
+  vars ELECTOR IDENTIFICATION-AUTHORITY REMOTE-POLLING-STATION : Name .
+
+  eq STRANDS-DOLEVYAO
+   = :: nil :: [ nil | -(M1 ; M2), +(M1), nil ] &
+     :: nil :: [ nil | -(M1 ; M2), +(M2), nil ] &
+     :: nil :: [ nil | -(M1), -(M2), +(M1 ; M2), nil ] &
+     :: nil :: [ nil | -(M1), -(M2), +(M1 * M2), nil ] &
+     :: nil :: [ nil | -(K), -(M), +(pk(K,M)), nil ] &
+     :: nil :: [ nil | -(K), -(M), +(sk(K,M)), nil ] &
+     :: nil :: [ nil | -(K), -(sk(K,M)), +(M), nil ] &
+     :: nil :: [ nil | -(K), -(pk(K,M)), +(M), nil ] &
+     :: nil :: [ nil | -(M), +(hash(M)), nil ] &
+     :: nil :: [ nil | -(M * Msk), -(Msk), +(M), nil ]
+  [nonexec] .
+
+
+  eq STRANDS-PROTOCOL
+   = :: Choice, Mask :: *** STRANDS DEL ELECTOR ***
+   [ nil |	
+   			+(ELECTOR ; IDENTIFICATION-AUTHORITY ; ((choice(ELECTOR,Choice) ; hash(choice(ELECTOR,Choice) ; mask(ELECTOR,Mask))) * pk(IDENTIFICATION-AUTHORITY,mask(ELECTOR,Mask)))),  
+		 	-(IDENTIFICATION-AUTHORITY ; ELECTOR ; (sk(IDENTIFICATION-AUTHORITY,(choice(ELECTOR,Choice) ; hash(choice(ELECTOR,Choice) ; mask(ELECTOR,Mask)))) * mask(ELECTOR,Mask))),
+		 	+(ELECTOR ; REMOTE-POLLING-STATION ; (sk(IDENTIFICATION-AUTHORITY,(choice(ELECTOR,Choice) ; hash(choice(ELECTOR,Choice) ; mask(ELECTOR,Mask)))) * mask(ELECTOR,Mask)) ; mask(ELECTOR,Mask)),
+    nil ] &
+     :: Choice, Mask :: *** STRANDS DEL IDENTIFICATION AUTHORITY ***
+    [ nil | 
+    		-(ELECTOR ; IDENTIFICATION-AUTHORITY ; ((choice(ELECTOR,Choice) ; hash(choice(ELECTOR,Choice) ; mask(ELECTOR,Mask))) * pk(IDENTIFICATION-AUTHORITY, mask(ELECTOR,Mask)))), 
+    		+(IDENTIFICATION-AUTHORITY ; ELECTOR ; (sk(IDENTIFICATION-AUTHORITY,(choice(ELECTOR,Choice) ; hash(choice(ELECTOR,Choice) ; mask(ELECTOR,Mask)))) * mask(ELECTOR,Mask))), 
+    nil ] &
+    :: Choice, Mask :: *** STRANDS DEL REMOTE POLLING STATION ***
+    [ nil | 
+     		-(ELECTOR ; REMOTE-POLLING-STATION ; (sk(IDENTIFICATION-AUTHORITY, (choice(ELECTOR,Choice) ; hash(choice(ELECTOR,Choice) ; mask(ELECTOR,Mask)))) * mask(ELECTOR,Mask)) ; mask(ELECTOR,Mask)), 
+     nil ]
+     
+  [nonexec] .
+  
+ eq ATTACK-STATE(0) *** EJECUCIÓN LEGAL ***
+   = :: Choice, Mask :: *** EJECUCIÓN DEL ELECTOR ***
+     [ nil, 
+			+(elector ; identification-authority ; ((choice(elector,Choice) ; hash(choice(elector,Choice) ; mask(elector,Mask))) * pk(identification-authority,mask(elector,Mask)))),
+			-(identification-authority ; elector ; (sk(identification-authority,(choice(elector,Choice) ; hash(choice(elector,Choice) ; mask(elector,Mask)))) * mask(elector,Mask))),
+			+(elector ; remote-polling-station ; (sk(identification-authority,(choice(elector,Choice) ; hash(choice(elector,Choice) ; mask(elector,Mask)))) * mask(elector,Mask)) ; mask(elector,Mask))
+     | nil ] &
+     :: Choice, Mask :: *** EJECUCIÓN DEL IDENTIFICATION AUTHORITY ***
+    [ nil, 
+    		-(elector ; identification-authority ; ((choice(elector,Choice) ; hash(choice(elector,Choice) ; mask(elector,Mask))) * pk(identification-authority, mask(elector,Mask)))), 
+    		+(identification-authority ; elector ; (sk(identification-authority,(choice(elector,Choice) ; hash(choice(elector,Choice) ; mask(elector,Mask)))) * mask(elector,Mask))) 
+    | nil ] &
+    :: Choice, Mask :: *** EJECUCIÓN DEL REMOTE POLLING STATION ***
+    [ nil, 
+     		-(elector ; remote-polling-station ; (sk(identification-authority, (choice(elector,Choice) ; hash(choice(elector,Choice) ; mask(elector,Mask)))) * mask(elector,Mask)) ; mask(elector,Mask)) 
+     | nil ]
+     || empty
+     || nil
+     || nil
+     || nil
+  [nonexec] .
+
+endfm
+
+--- THIS HAS TO BE THE LAST LOADED MODULE !!!!
+select MAUDE-NPA .
